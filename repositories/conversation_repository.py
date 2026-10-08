@@ -1,8 +1,6 @@
 from uuid import UUID
-
 from sqlalchemy import select
 from sqlalchemy.orm import Session
-
 from models.conversation import Conversation
 
 
@@ -13,13 +11,13 @@ class ConversationRepository:
         conversation = Conversation(user_id=user_id,character_id=character_id)
         self.db.add(conversation)
         return conversation
-    def get_by_id(self,conversation_id: UUID) -> Conversation | None:
-        stmt = select(Conversation).where(Conversation.conversation_id == conversation_id)
+    def get_by_id(self,user_id:UUID,conversation_id: UUID) -> Conversation | None:
+        stmt = select(Conversation).where(Conversation.conversation_id == conversation_id,Conversation.user_id==user_id)
         return self.db.scalar(stmt)
     def get_by_user_id(self, user_id: UUID) -> list[Conversation]:
         stmt = (
             select(Conversation)
-            .where(Conversation.user_id == user_id)
+            .where(Conversation.user_id == user_id,)
             .order_by(Conversation.updated_at.desc())
         )
         return list(self.db.scalars(stmt).all())

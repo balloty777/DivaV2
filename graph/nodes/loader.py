@@ -1,9 +1,8 @@
 from langchain_core.messages import AIMessage, HumanMessage
 from langchain_core.runnables import RunnableConfig
 from sqlalchemy.orm import Session
-
 from character.character_summary import CharacterSummary, Characters
-from exceptions.application import ForbiddenException, NotFoundException
+from exceptions.application import NotFoundException
 from graph.state import State
 from memory.long_term_memory import LongTermMemory
 from memory.short_term_memory import ShortTermMemory
@@ -12,7 +11,6 @@ from repositories.conversation_repository import ConversationRepository
 from repositories.long_term_memory_repository import LongTermMemoryRepository
 from repositories.message_repository import MessageRepository
 from repositories.short_term_memory_repository import ShortTermMemoryRepository
-
 
 def _get_runtime(config: RunnableConfig) -> tuple[Session, object]:
     configurable = config.get("configurable", {})
@@ -39,16 +37,33 @@ def _to_characters(content: dict) -> Characters:
 def load_context(state: State, config: RunnableConfig) -> dict:
     db, current_user_id = _get_runtime(config)
     conversation_id = state["conversation_id"]
-    conversation = ConversationRepository(db).get_by_id(conversation_id)
+
+    conversation = ConversationRepository(db).get_by_id(
+        user_id=current_user_id,
+        conversation_id=conversation_id,
+    )
+
     if conversation is None:
         raise NotFoundException("Conversation does not exist")
-    if conversation.user_id != current_user_id:
-        raise ForbiddenException("Not authorised to access this conversation")
-    character_summary_row = CharacterSummaryRepository(db).get_by_character_id(conversation.character_id)
+
+    character_summary_row = CharacterSummaryRepository(db).get_by_character_id(
+        conversation.character_id
+    )
+
     short_term_memory_row = (
-        ShortTermMemoryRepository(db).get_memory_by_conversation_id(conversation_id))
-    long_term_memory_row = (LongTermMemoryRepository(db).get_memory_by_conversation_id(conversation_id))
-    message_rows = MessageRepository(db).get_message_by_conversation_id(conversation_id)
+        ShortTermMemoryRepository(db)
+        .get_memory_by_conversation_id(conversation_id)
+    )
+
+    long_term_memory_row = (
+        LongTermMemoryRepository(db)
+        .get_memory_by_conversation_id(conversation_id)
+    )
+
+    message_rows = (
+        MessageRepository(db)
+        .get_message_by_conversation_id(conversation_id)
+    )
 
     messages = [
         HumanMessage(content=message.content)

@@ -31,7 +31,7 @@ class ConversationService:
             self.db.rollback()
             raise
     def delete_conversation(self,user_id:UUID,conversation_id: UUID) -> None:
-        conversation = self.conversation_repository.get_by_id(conversation_id=conversation_id)
+        conversation = self.conversation_repository.get_by_id(user_id=user_id,conversation_id=conversation_id)
         if conversation is None:
             raise NotFoundException("Conversation does not exist")
         if user_id!=conversation.user_id:
