@@ -1,6 +1,6 @@
 from datetime import datetime
 from uuid import UUID,uuid4
-from sqlalchemy import DateTime,ForeignKey,func,String
+from sqlalchemy import DateTime,ForeignKey,func,String,BigInteger
 from sqlalchemy.orm import Mapped,mapped_column,relationship
 from database.db import Base
 
@@ -28,6 +28,12 @@ class Conversation(Base):
         String(20),
         nullable=False,
         default="active"
+    )
+    last_seq:Mapped[int]=mapped_column(
+        BigInteger,
+        nullable=False,
+        default=0,
+        server_default="0"
     )
     created_at:Mapped[datetime]=mapped_column(
         DateTime(timezone=True),

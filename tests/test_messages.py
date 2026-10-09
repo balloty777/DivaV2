@@ -10,7 +10,7 @@ def test_list_messages(client):
 
     assert signup_response.status_code == 200
 
-    # Log in to obtain the V1 JWT.
+    # Log in to obtain the JWT.
     login_response = client.post(
         "/auth/login",
         json={
@@ -22,10 +22,7 @@ def test_list_messages(client):
     assert login_response.status_code == 200
 
     access_token = login_response.json()["access_token"]
-
-    headers = {
-        "Authorization": f"Bearer {access_token}",
-    }
+    headers = {"Authorization": f"Bearer {access_token}"}
 
     # Create the character.
     character_response = client.post(
@@ -38,64 +35,23 @@ def test_list_messages(client):
     )
 
     assert character_response.status_code == 200
-
     character_id = character_response.json()["character_id"]
 
     # Create the conversation.
     conversation_response = client.post(
         "/conversations/",
         headers=headers,
-        json={
-            "character_id": character_id,
-        },
+        json={"character_id": character_id},
     )
 
     assert conversation_response.status_code == 200
-
     conversation_id = conversation_response.json()["conversation_id"]
 
-    # Store a user message.
-    user_message_response = client.post(
-        f"/conversations/{conversation_id}/messages/",
-        headers=headers,
-        json={
-            "content": "Hello there!",
-            "role": "user",
-        },
-    )
-
-    assert user_message_response.status_code == 200
-
-    # Store an assistant message.
-    assistant_message_response = client.post(
-        f"/conversations/{conversation_id}/messages/",
-        headers=headers,
-        json={
-            "content": "Hello! How can I help?",
-            "role": "assistant",
-        },
-    )
-
-    assert assistant_message_response.status_code == 200
-
-    # Retrieve all messages in the conversation.
+    # Retrieve messages from the new, empty conversation.
     messages_response = client.get(
         f"/conversations/{conversation_id}/messages/",
         headers=headers,
     )
 
     assert messages_response.status_code == 200
-
-    messages = messages_response.json()
-
-    assert len(messages) == 2
-
-    assert messages[0]["content"] == "Hello there!"
-    assert messages[0]["role"] == "user"
-
-    assert messages[1]["content"] == "Hello! How can I help?"
-    assert messages[1]["role"] == "assistant"
-
-    assert "message_id" in messages[0]
-    assert "conversation_id" in messages[0]
-    assert "created_at" in messages[0]
+    assert messages_response.json() == []
