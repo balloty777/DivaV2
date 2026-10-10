@@ -45,9 +45,7 @@ def test_new_conversation_starts_without_existing_memory(monkeypatch):
     conversation_id = uuid4()
 
     conversation_repository = MagicMock()
-    conversation_repository.get_by_id.return_value = SimpleNamespace(
-        character_id=character_id
-    )
+    conversation_repository.get_by_id.return_value = SimpleNamespace(character_id=character_id,last_seq=0)
 
     character_summary_repository = MagicMock()
     character_summary_repository.get_by_character_id.return_value = None
@@ -59,7 +57,7 @@ def test_new_conversation_starts_without_existing_memory(monkeypatch):
     ltm_repository.get_memory_by_conversation_id.return_value = None
 
     message_repository = MagicMock()
-    message_repository.get_message_by_conversation_id.return_value = []
+    message_repository.get_recent.return_value = []
 
     monkeypatch.setattr(
         loader,
@@ -117,9 +115,7 @@ def test_memory_lookup_uses_the_requested_conversation_id(monkeypatch):
     conversation_b_id = uuid4()
 
     conversation_repository = MagicMock()
-    conversation_repository.get_by_id.return_value = SimpleNamespace(
-        character_id=character_id
-    )
+    conversation_repository.get_by_id.return_value = SimpleNamespace(character_id=character_id,last_seq=0)
 
     character_summary_repository = MagicMock()
     character_summary_repository.get_by_character_id.return_value = None
@@ -145,7 +141,7 @@ def test_memory_lookup_uses_the_requested_conversation_id(monkeypatch):
     )
 
     message_repository = MagicMock()
-    message_repository.get_message_by_conversation_id.return_value = []
+    message_repository.get_recent.return_value = []
 
     monkeypatch.setattr(
         loader,

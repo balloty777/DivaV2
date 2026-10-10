@@ -1,5 +1,5 @@
 
-"""Add ordered message sequence.
+"""Add ordered message sequence and memory checkpoints.
 
 Revision ID: ea37cb05af07
 Revises: 7302c64a4110
@@ -115,8 +115,44 @@ def upgrade() -> None:
         unique=False,
     )
 
+    # 7. Add checkpoints for successful memory processing.
+    op.add_column(
+        "conversations",
+        sa.Column(
+            "last_stm_seq",
+            sa.BigInteger(),
+            nullable=False,
+            server_default=sa.text("0"),
+        ),
+    )
+
+    op.add_column(
+        "conversations",
+        sa.Column(
+            "last_ltm_seq",
+            sa.BigInteger(),
+            nullable=False,
+            server_default=sa.text("0"),
+        ),
+    )
+
+    # Existing conversations begin tracking from their current sequence.
+    op.execute(
+        """
+        UPDATE conversations
+        SET
+            last_stm_seq = last_seq,
+            last_ltm_seq = last_seq;
+        """
+    )
+
 
 def downgrade() -> None:
+    # Remove memory checkpoints first.
+    op.drop_column("conversations", "last_ltm_seq")
+    op.drop_column("conversations", "last_stm_seq")
+
+    # Remove message index and constraints.
     op.drop_index(
         "ix_messages_conversation_id_seq_desc",
         table_name="messages",
@@ -134,5 +170,6 @@ def downgrade() -> None:
         type_="unique",
     )
 
+    # Remove sequence columns.
     op.drop_column("messages", "seq")
     op.drop_column("conversations", "last_seq")

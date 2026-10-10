@@ -31,18 +31,16 @@ class MessageService:
         if conversation is None:
             raise NotFoundException("Message does not exist")
         return message
-    def get_message_by_conversation_id(self,user_id:UUID,conversation_id:UUID)->list[Message]:
-        conversation=self.conversation_repository.get_by_id(user_id=user_id,conversation_id=conversation_id)
+    def get_message_by_conversation_id(self,user_id: UUID,conversation_id: UUID,limit: int = 20,before_seq: int | None = None) -> list[Message]:
+        conversation = self.conversation_repository.get_by_id(user_id=user_id,conversation_id=conversation_id)
         if conversation is None:
-            raise NotFoundException("Message does not exist")
-        message=self.message_repository.get_message_by_conversation_id(conversation_id=conversation_id)
-        return message
-    def get_message_by_role(self,user_id:UUID,conversation_id:UUID,role:str)->list[Message]:
-        message=self.message_repository.get_message_by_role(role=role,conversation_id=conversation_id)
-        conversation=self.conversation_repository.get_by_id(user_id=user_id,conversation_id=conversation_id)
+            raise NotFoundException("Conversation does not exist")
+        return self.message_repository.get_message_page(conversation_id=conversation_id,limit=limit,before_seq=before_seq)
+    def get_message_by_role(self,user_id: UUID,conversation_id: UUID,role: str) -> list[Message]:
+        conversation = self.conversation_repository.get_by_id(user_id=user_id,conversation_id=conversation_id)
         if conversation is None:
-            raise NotFoundException("Message does not exist")
-        return message
+            raise NotFoundException("Conversation does not exist")
+        return self.message_repository.get_message_by_role(role=role,conversation_id=conversation_id)
     def delete_message(self,user_id:UUID,message_id:UUID)->None:
         message=self.message_repository.get_message_by_id(message_id=message_id)
         if message is None:

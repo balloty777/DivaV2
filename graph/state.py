@@ -9,6 +9,7 @@ class State(TypedDict):
     conversation_id:UUID
     query:str 
     messages:list[BaseMessage]
+    last_seq:int
     character_summary: Characters | None
     short_term_memory: ShortTermMemory | None
     long_term_memory: LongTermMemory | None

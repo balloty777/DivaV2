@@ -35,6 +35,18 @@ class Conversation(Base):
         default=0,
         server_default="0"
     )
+    last_stm_seq:Mapped[int]=mapped_column(
+        BigInteger,
+        nullable=False,
+        default=0,
+        server_default="0"
+    )
+    last_ltm_seq:Mapped[int]=mapped_column(
+        BigInteger,
+        nullable=False,
+        default=0,
+        server_default="0"
+    )
     created_at:Mapped[datetime]=mapped_column(
         DateTime(timezone=True),
         nullable=False,

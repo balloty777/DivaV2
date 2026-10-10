@@ -37,7 +37,7 @@ def _to_characters(content: dict) -> Characters:
 def load_context(state: State, config: RunnableConfig) -> dict:
     db, current_user_id = _get_runtime(config)
     conversation_id = state["conversation_id"]
-
+    message_repository=MessageRepository(db)
     conversation = ConversationRepository(db).get_by_id(
         user_id=current_user_id,
         conversation_id=conversation_id,
@@ -60,10 +60,7 @@ def load_context(state: State, config: RunnableConfig) -> dict:
         .get_memory_by_conversation_id(conversation_id)
     )
 
-    message_rows = (
-        MessageRepository(db)
-        .get_message_by_conversation_id(conversation_id)
-    )
+    message_rows = message_repository.get_recent(conversation_id=conversation_id,limit=20)
 
     messages = [
         HumanMessage(content=message.content)
@@ -74,6 +71,7 @@ def load_context(state: State, config: RunnableConfig) -> dict:
 
     return {
         "messages": messages,
+        "last_seq":conversation.last_seq,
         "character_summary": (
             _to_characters(character_summary_row.content)
             if character_summary_row is not None
