@@ -1,14 +1,14 @@
 class AppException(Exception):
-    pass
+    """Base class for application-level exceptions."""
 
 
 class NotFoundException(AppException):
-    pass
+    """Raised when a requested resource does not exist or is not accessible."""
 
 
 class ConflictException(AppException):
-    pass
+    """Raised when a request conflicts with the current resource state."""
 
-class ForbiddenException(Exception):
-    pass
 
+class ForbiddenException(AppException):
+    """Raised when an authenticated user is not permitted to perform an action."""

@@ -13,8 +13,6 @@ class MessageService:
         conversation=self.conversation_repository.get_by_id(user_id=user_id,conversation_id=conversation_id)
         if conversation is None:
             raise NotFoundException("Conversation does not exist")
-        if user_id!=conversation.user_id:
-            raise ForbiddenException("Not Authorised")
         message=self.message_repository.store_message(conversation_id=conversation_id,content=content,role=role)
         try:
             self.db.commit()
