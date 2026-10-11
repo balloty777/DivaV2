@@ -6,6 +6,7 @@ from .short_term_memory import ShortTermMemory
 from .long_term_memory import LongTermMemory
 from .character import Character
 from .conversation_character_summary import ConversationCharacterSummary
+from .memory_job import MemoryJob
 __all__ = [
     "User",
     "Character",
@@ -15,4 +16,5 @@ __all__ = [
     "ConversationCharacterSummary",
     "ShortTermMemory",
     "LongTermMemory",
+    "MemoryJob"
 ]
