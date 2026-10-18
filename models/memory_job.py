@@ -1,6 +1,6 @@
 from datetime import datetime
 from uuid import UUID,uuid4
-from sqlalchemy import DateTime,ForeignKey,String,func,Index,CheckConstraint
+from sqlalchemy import DateTime,ForeignKey,String,func,Index,CheckConstraint,Integer,Text
 from sqlalchemy.orm import Mapped,mapped_column
 from database.db import Base
 
@@ -30,6 +30,24 @@ class MemoryJob(Base):
         nullable=False,
         default=0,
         server_default="0"
+    )
+    last_error:Mapped[str|None]=mapped_column(
+        Text,
+        nullable=True
+    )
+    locked_at:Mapped[datetime|None]=mapped_column(
+        DateTime(timezone=True),
+        nullable=True
+    )
+    max_attempts:Mapped[int]=mapped_column(
+        Integer,
+        nullable=False,
+        default=5,
+        server_default="5"
+    )
+    next_attempt_at:Mapped[datetime|None]=mapped_column(
+        DateTime(timezone=True),
+        nullable=True
     )
     created_at:Mapped[datetime]=mapped_column(
         DateTime(timezone=True),

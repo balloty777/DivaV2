@@ -33,6 +33,11 @@ class MessageRepository:
     def get_message_by_role(self,conversation_id: UUID,role: str) -> list[Message]:
         stmt = (select(Message).where(Message.role == role,Message.conversation_id == conversation_id).order_by(Message.seq.asc()))
         return list(self.db.scalars(stmt).all())
+    def get_messages_between_sequences(self,conversation_id:UUID,after_seq:int,through_seq:int)->list[Message]:
+        if after_seq<0 or through_seq<after_seq:
+            raise ConflictException("Invalid message sequence range")
+        stmt=select(Message).where(Message.conversation_id==conversation_id,Message.seq>after_seq,Message.seq<=through_seq).order_by(Message.seq.asc())
+        return list(self.db.scalars(stmt).all())
     def get_message_page(self,conversation_id: UUID,limit: int = 20,before_seq: int | None = None) -> list[Message]:
         if limit < 1:
             raise ConflictException("Limit must be at least 1")

@@ -10,6 +10,7 @@ class Character(Base):
     creator_id:Mapped[UUID|None]=mapped_column(ForeignKey("users.user_id",ondelete="SET NULL"),nullable=True,index=True)
     name:Mapped[str]=mapped_column(String(100),nullable=False)
     status:Mapped[str]=mapped_column(String(40),nullable=False,default="draft")
+    version:Mapped[int]=mapped_column(nullable=False,default=1,server_default="1")
     avatar_url:Mapped[str|None]=mapped_column(String(500),nullable=True)
     created_at:Mapped[datetime]=mapped_column(DateTime(timezone=True),nullable=False,server_default=func.now())
     updated_at:Mapped[datetime]=mapped_column(DateTime(timezone=True),nullable=False,server_default=func.now(),onupdate=func.now())

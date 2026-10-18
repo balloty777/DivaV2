@@ -4,7 +4,12 @@ from unittest.mock import MagicMock
 from uuid import uuid4
 
 import pytest
+from pydantic import ValidationError
 
+from character.character_summary import (
+    Characters,
+    StoredCharacterSummary,
+)
 from exceptions.application import NotFoundException
 from graph.nodes import loader
 from services.conversation_service import ConversationService
@@ -13,6 +18,7 @@ from services.conversation_service import ConversationService
 # ---------------------------------------------------------
 # Existing unit tests
 # ---------------------------------------------------------
+
 
 def test_user_cannot_access_another_users_conversation(monkeypatch):
     """An unowned conversation should be treated as not found."""
@@ -202,9 +208,64 @@ def test_memory_lookup_uses_the_requested_conversation_id(monkeypatch):
 
 
 # ---------------------------------------------------------
+# Phase 5.1: Canonical character-summary schema
+# ---------------------------------------------------------
+
+
+def test_stored_character_summary_uses_schema_version_one():
+    """Stored profiles use schema version 1 without a characters wrapper."""
+    profile = StoredCharacterSummary(
+        name="Aria",
+        personality=["Quiet", "Observant"],
+    )
+
+    content = profile.model_dump(mode="json")
+
+    assert content["schema_version"] == 1
+    assert content["name"] == "Aria"
+    assert content["personality"] == ["Quiet", "Observant"]
+    assert "characters" not in content
+
+
+def test_loader_accepts_canonical_profile():
+    """The loader adapts a canonical profile to the graph's expected structure."""
+    content = {
+        "schema_version": 1,
+        "name": "Aria",
+        "personality": ["Quiet", "Observant"],
+    }
+
+    result = loader._to_characters(content)
+
+    assert isinstance(result, Characters)
+    assert len(result.characters) == 1
+    assert result.characters[0].name == "Aria"
+    assert result.characters[0].personality == [
+        "Quiet",
+        "Observant",
+    ]
+
+
+def test_loader_rejects_old_wrapped_profile():
+    """The loader must reject the old characters-wrapper database format."""
+    content = {
+        "characters": [
+            {
+                "name": "Aria",
+                "personality": ["Quiet"],
+            }
+        ]
+    }
+
+    with pytest.raises(ValidationError):
+        loader._to_characters(content)
+
+
+# ---------------------------------------------------------
 # Integration-test helpers
 # Uses the real API and the configured test database.
 # ---------------------------------------------------------
+
 
 def _create_user_and_login(client, email: str) -> dict:
     signup = client.post(
@@ -256,6 +317,7 @@ def _create_character_and_conversation(client, headers: dict) -> str:
 # ---------------------------------------------------------
 # Real API isolation tests
 # ---------------------------------------------------------
+
 
 def test_user_b_cannot_access_user_a_conversation_resources(client):
     """User B must not access User A's conversation or memory endpoints."""

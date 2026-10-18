@@ -20,6 +20,11 @@ class Conversation(Base):
         nullable=False,
         index=True
     )
+    character_version:Mapped[int]=mapped_column(
+        nullable=False,
+        default=1,
+        server_default="1"
+    )
     title:Mapped[str|None]=mapped_column(
         String(200),
         nullable=True

@@ -5,7 +5,7 @@ from repositories.character_repository import CharacterRepository
 from repositories.character_summary_repository import CharacterSummaryRepository
 from repositories.user_repository import UserRepository
 from exceptions.application import NotFoundException,ForbiddenException
-from character.character_summary import Characters, create_character
+from character.character_summary import create_character,StoredCharacterSummary
 
 
 class CharacterService:
@@ -30,41 +30,19 @@ class CharacterService:
         except Exception:
             self.db.rollback()
             raise
-    def create_character_from_summary(
-        self,
-        creator_id: UUID,
-        name: str,
-        summary: str,
-        avatar_url: str | None = None,
-    ) -> Character:
+    def create_character_from_summary(self,creator_id: UUID,name: str,summary: str,avatar_url: str | None = None) -> Character:
         user = self.user_repository.get_by_id(creator_id)
         if user is None:
             raise NotFoundException("User does not exist")
-
-        structured_summary = create_character(
-            f"Character name: {name}\n\nCharacter description:\n{summary}"
-        )
+        structured_summary = create_character(f"Character name: {name}\n\nCharacter description:\n{summary}")
         if not structured_summary.characters:
             raise ValueError("The character summary could not be created")
-
-        # One chat represents one character. Persist a single schema-valid profile.
-        profile = structured_summary.characters[0].model_copy(
-            update={"name": name}
-        )
-        content = Characters(characters=[profile]).model_dump(mode="json")
-
-        # Characters are public as soon as they're created - no separate publish step.
-        character = self.character_repository.create_character(
-            creator_id=creator_id,
-            name=name,
-            status="active",
-            avatar_url=avatar_url,
-        )
+        profile = structured_summary.characters[0].model_copy(update={"name": name})
+        stored_profile=StoredCharacterSummary.model_validate(profile.model_dump())
+        content = stored_profile.model_dump(mode="json")
+        character = self.character_repository.create_character(creator_id=creator_id,name=name,status="active",avatar_url=avatar_url)
         self.db.flush()
-        self.character_summary_repository.create_character_summary(
-            character_id=character.character_id,
-            content=content,
-        )
+        self.character_summary_repository.create_character_summary(character_id=character.character_id,content=content)
 
         try:
             self.db.commit()

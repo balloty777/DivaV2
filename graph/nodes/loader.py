@@ -1,7 +1,7 @@
 from langchain_core.messages import AIMessage, HumanMessage
 from langchain_core.runnables import RunnableConfig
 from sqlalchemy.orm import Session
-from character.character_summary import CharacterSummary, Characters
+from character.character_summary import CharacterSummary, Characters,StoredCharacterSummary
 from exceptions.application import NotFoundException
 from graph.state import State
 from memory.long_term_memory import LongTermMemory
@@ -22,16 +22,9 @@ def _get_runtime(config: RunnableConfig) -> tuple[Session, object]:
 
 
 def _to_characters(content: dict) -> Characters:
-    """
-    Supports either of these PostgreSQL JSONB formats:
-
-    {"characters": [{...}]}
-    {...single character fields...}
-    """
-    if "characters" in content:
-        return Characters.model_validate(content)
-
-    return Characters(characters=[CharacterSummary.model_validate(content)])
+    stored_profile=StoredCharacterSummary.model_validate(content)
+    profile=CharacterSummary.model_validate(stored_profile.model_dump(exclude={"schema_version"}))
+    return Characters(characters=[profile])
 
 
 def load_context(state: State, config: RunnableConfig) -> dict:
