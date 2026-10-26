@@ -4,6 +4,8 @@ from uuid import UUID
 from schemas.conversation_character_summary import ConversationCharacterState
 from langchain_core.language_models.fake_chat_models import FakeListChatModel
 from sqlalchemy import select
+from models.long_term_memory import LongTermMemory
+from models.short_term_memory import ShortTermMemory
 
 from tests.conftest import TestingSessionLocal
 from memory import worker
@@ -162,7 +164,163 @@ def test_failed_stm_call_leaves_memory_job_retryable(
             "assistant",
         }
 
+def test_failed_ltm_call_does_not_persist_stm_or_advance_checkpoints(
+    client,
+    monkeypatch,
+):
+    """An LTM generation failure must not partially persist memory."""
 
+    headers, conversation_id = _create_conversation(client, monkeypatch)
+
+    monkeypatch.setattr(
+        "graph.nodes.update_character_state.get_model",
+        lambda: FakeCharacterStateModel(),
+    )
+
+    chat_response = client.post(
+        f"/conversations/{conversation_id}/chat",
+        headers=headers,
+        json={"query": "Remember this exchange."},
+    )
+    assert chat_response.status_code == 200, chat_response.text
+
+    def generate_stm(*args, **kwargs):
+        # The worker must not persist this result if LTM generation fails.
+        return object()
+
+    def fail_ltm(*args, **kwargs):
+        raise RuntimeError("Simulated LTM LLM failure")
+
+    monkeypatch.setattr(worker, "create_short_term_memory", generate_stm)
+    monkeypatch.setattr(worker, "create_long_term_memory", fail_ltm)
+
+    assert worker.run_one_memory_job() is True
+
+    with TestingSessionLocal() as session:
+        job = session.execute(
+            select(MemoryJob).where(
+                MemoryJob.conversation_id == UUID(conversation_id)
+            )
+        ).scalar_one()
+
+        conversation = session.execute(
+            select(Conversation).where(
+                Conversation.conversation_id == UUID(conversation_id)
+            )
+        ).scalar_one()
+
+        stm = session.execute(
+            select(ShortTermMemory).where(
+                ShortTermMemory.conversation_id == UUID(conversation_id)
+            )
+        ).scalar_one_or_none()
+
+        ltm = session.execute(
+            select(LongTermMemory).where(
+                LongTermMemory.conversation_id == UUID(conversation_id)
+            )
+        ).scalar_one_or_none()
+
+        assert job.status == "pending"
+        assert job.last_error is not None
+        assert "Simulated LTM LLM failure" in job.last_error
+        assert job.next_attempt_at is not None
+
+        assert conversation.last_stm_seq == 0
+        assert conversation.last_ltm_seq == 0
+
+        assert stm is None
+        assert ltm is None
+
+def test_worker_with_expired_lease_cannot_persist_memory(
+    client,
+    monkeypatch,
+):
+    """A worker that loses its lease must not persist stale results."""
+
+    headers, conversation_id = _create_conversation(client, monkeypatch)
+
+    monkeypatch.setattr(
+        "graph.nodes.update_character_state.get_model",
+        lambda: FakeCharacterStateModel(),
+    )
+
+    chat_response = client.post(
+        f"/conversations/{conversation_id}/chat",
+        headers=headers,
+        json={"query": "Remember this exchange."},
+    )
+    assert chat_response.status_code == 200, chat_response.text
+
+    original_stm_generator = worker.create_short_term_memory
+    original_ltm_generator = worker.create_long_term_memory
+
+    def generate_stm_then_expire_lease(*args, **kwargs):
+        result = original_stm_generator(*args, **kwargs)
+
+        # Simulate another worker reclaiming the job while this worker
+        # is outside its database transaction calling the LLM.
+        with TestingSessionLocal.begin() as session:
+            job = session.execute(
+                select(MemoryJob).where(
+                    MemoryJob.conversation_id == UUID(conversation_id)
+                )
+            ).scalar_one()
+
+            job.status = "processing"
+            job.attempts += 1
+            job.locked_at = datetime.now(timezone.utc) + timedelta(seconds=1)
+
+        return result
+
+    monkeypatch.setattr(
+        worker,
+        "create_short_term_memory",
+        generate_stm_then_expire_lease,
+    )
+
+    # Ensure LTM generation can finish, so the worker reaches the
+    # persistence boundary and must reject its stale lease.
+    assert callable(original_ltm_generator)
+
+    assert worker.run_one_memory_job() is True
+
+    with TestingSessionLocal() as session:
+        job = session.execute(
+            select(MemoryJob).where(
+                MemoryJob.conversation_id == UUID(conversation_id)
+            )
+        ).scalar_one()
+
+        conversation = session.execute(
+            select(Conversation).where(
+                Conversation.conversation_id == UUID(conversation_id)
+            )
+        ).scalar_one()
+
+        stm = session.execute(
+            select(ShortTermMemory).where(
+                ShortTermMemory.conversation_id == UUID(conversation_id)
+            )
+        ).scalar_one_or_none()
+
+        ltm = session.execute(
+            select(LongTermMemory).where(
+                LongTermMemory.conversation_id == UUID(conversation_id)
+            )
+        ).scalar_one_or_none()
+
+        assert job.status == "processing"
+
+        # The newer lease must remain untouched.
+        assert job.attempts == 2
+        assert job.locked_at is not None
+
+        # The stale worker must not persist memory or advance checkpoints.
+        assert stm is None
+        assert ltm is None
+        assert conversation.last_stm_seq == 0
+        assert conversation.last_ltm_seq == 0
 def test_memory_job_enqueue_coalesces_through_seq(
     client,
     monkeypatch,

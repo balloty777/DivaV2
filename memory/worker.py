@@ -1,36 +1,23 @@
 import logging
 from uuid import UUID
-
 from langchain_core.messages import AIMessage, HumanMessage
 from sqlalchemy import select
-
 from database.db import SessionLocal
-from memory.long_term_memory import (
-    LongTermMemory as LongTermMemorySchema,
-    create_long_term_memory,
-)
-from memory.short_term_memory import (
-    ShortTermMemory as ShortTermMemorySchema,
-    create_short_term_memory,
-)
+from memory.long_term_memory import LongTermMemory as LongTermMemorySchema,create_long_term_memory
+from memory.short_term_memory import ShortTermMemory as ShortTermMemorySchema,create_short_term_memory
 from models.conversation import Conversation
 from models.long_term_memory import LongTermMemory
 from models.memory_job import MemoryJob
 from models.short_term_memory import ShortTermMemory
-from repositories.long_term_memory_repository import (
-    LongTermMemoryRepository,
-)
+from repositories.long_term_memory_repository import LongTermMemoryRepository
 from repositories.memory_job_repository import MemoryJobRepository
 from repositories.message_repository import MessageRepository
-from repositories.short_term_memory_repository import (
-    ShortTermMemoryRepository,
-)
+from repositories.short_term_memory_repository import ShortTermMemoryRepository
 
 logger = logging.getLogger(__name__)
 
 
 def _to_langchain_messages(rows):
-    """Convert persisted chat messages into LangChain message objects."""
 
     return [
         HumanMessage(content=row.content)
@@ -41,257 +28,106 @@ def _to_langchain_messages(rows):
 
 
 def run_one_memory_job() -> bool:
-    """
-    Process one memory job.
-
-    Returns True when a job was claimed and processed or failed.
-    Returns False when no eligible job is available.
-    """
 
     job_id: UUID | None = None
     claimed_locked_at = None
 
-    # Step 1: Claim the job in a short transaction.
     with SessionLocal() as db:
         with db.begin():
             repository = MemoryJobRepository(db)
             job = repository.claim_next_job()
-
             if job is None:
                 return False
-
             job_id = job.job_id
             conversation_id = job.conversation_id
             claimed_locked_at = job.locked_at
 
     try:
-        # Step 2: Load checkpoints, messages, and previous memories.
-        # This transaction closes before either LLM call begins.
         with SessionLocal() as db:
             with db.begin():
-                job = db.scalar(
-                    select(MemoryJob).where(
-                        MemoryJob.job_id == job_id
-                    )
-                )
+                job = db.scalar(select(MemoryJob).where(MemoryJob.job_id == job_id))
 
-                if (
-                    job is None
-                    or job.status != "processing"
-                    or job.locked_at != claimed_locked_at
-                ):
-                    raise RuntimeError(
-                        "Claimed memory job is no longer owned "
-                        "by this worker"
-                    )
-
+                if (job is None or job.status != "processing" or job.locked_at != claimed_locked_at):
+                    raise RuntimeError("Claimed memory job is no longer owned ""by this worker")
                 conversation = db.scalar(
-                    select(Conversation).where(
-                        Conversation.conversation_id == conversation_id
-                    )
-                )
+                    select(Conversation).where(Conversation.conversation_id == conversation_id))
 
                 if conversation is None:
-                    raise RuntimeError(
-                        "Conversation for memory job no longer exists"
-                    )
-
+                    raise RuntimeError("Conversation for memory job no longer exists")
                 target_seq = job.through_seq
                 stm_checkpoint = conversation.last_stm_seq
                 ltm_checkpoint = conversation.last_ltm_seq
 
                 message_repository = MessageRepository(db)
 
-                stm_rows = (
-                    message_repository.get_messages_between_sequences(
-                        conversation_id,
-                        stm_checkpoint,
-                        target_seq,
-                    )
-                )
+                stm_rows = (message_repository.get_messages_between_sequences(conversation_id,stm_checkpoint,target_seq))
+                ltm_rows = (message_repository.get_messages_between_sequences(conversation_id,ltm_checkpoint,target_seq))
 
-                ltm_rows = (
-                    message_repository.get_messages_between_sequences(
-                        conversation_id,
-                        ltm_checkpoint,
-                        target_seq,
-                    )
-                )
+                stm_row = (ShortTermMemoryRepository(db).get_memory_by_conversation_id(conversation_id))
+                ltm_row = (LongTermMemoryRepository(db).get_memory_by_conversation_id(conversation_id))
 
-                stm_row = (
-                    ShortTermMemoryRepository(db)
-                    .get_memory_by_conversation_id(conversation_id)
-                )
+                old_stm = (ShortTermMemorySchema.model_validate(stm_row.content) if stm_row is not None else None)
+                old_ltm = (LongTermMemorySchema.model_validate(ltm_row.content) if ltm_row is not None else None)
 
-                ltm_row = (
-                    LongTermMemoryRepository(db)
-                    .get_memory_by_conversation_id(conversation_id)
-                )
-
-                old_stm = (
-                    ShortTermMemorySchema.model_validate(stm_row.content)
-                    if stm_row is not None
-                    else None
-                )
-
-                old_ltm = (
-                    LongTermMemorySchema.model_validate(ltm_row.content)
-                    if ltm_row is not None
-                    else None
-                )
-
-                # Detach the message data needed by the LLM from the
-                # database session before leaving this transaction.
                 stm_messages = _to_langchain_messages(stm_rows)
                 ltm_messages = _to_langchain_messages(ltm_rows)
 
-        # Step 3: Generate STM, then LTM.
-        # No database transaction is held during these calls.
         new_stm = old_stm
         new_ltm = old_ltm
 
         if stm_messages:
-            new_stm = create_short_term_memory(
-                stm_messages,
-                old_stm,
-            )
+            new_stm = create_short_term_memory(stm_messages,old_stm)
 
         if ltm_messages:
-            new_ltm = create_long_term_memory(
-                ltm_messages,
-                old_ltm,
-            )
+            new_ltm = create_long_term_memory(ltm_messages,old_ltm)
 
-        # Step 4: Persist both memory results and advance checkpoints
-        # atomically in one short transaction.
         with SessionLocal() as db:
             with db.begin():
-                job = db.scalar(
-                    select(MemoryJob)
-                    .where(MemoryJob.job_id == job_id)
-                    .with_for_update()
-                )
+                job = db.scalar(select(MemoryJob).where(MemoryJob.job_id == job_id).with_for_update())
 
-                if (
-                    job is None
-                    or job.status != "processing"
-                    or job.locked_at != claimed_locked_at
-                ):
-                    raise RuntimeError(
-                        "Memory job lease is no longer owned "
-                        "by this worker"
-                    )
-
-                conversation = db.scalar(
-                    select(Conversation)
-                    .where(
-                        Conversation.conversation_id == conversation_id
-                    )
-                    .with_for_update()
-                )
+                if (job is None or job.status != "processing" or job.locked_at != claimed_locked_at):
+                    raise RuntimeError("Memory job lease is no longer owned ""by this worker")
+                conversation = db.scalar(select(Conversation).where(Conversation.conversation_id == conversation_id).with_for_update())
 
                 if conversation is None:
-                    raise RuntimeError(
-                        "Conversation no longer exists"
-                    )
+                    raise RuntimeError("Conversation no longer exists")
 
-                # Save STM if a memory result is available.
                 if new_stm is not None:
                     repository = ShortTermMemoryRepository(db)
-                    row = repository.get_memory_by_conversation_id(
-                        conversation_id
-                    )
+                    row = repository.get_memory_by_conversation_id(conversation_id)
                     content = new_stm.model_dump(mode="json")
-
                     if row is None:
-                        repository.create_short_term_memory(
-                            conversation_id,
-                            content,
-                        )
+                        repository.create_short_term_memory(conversation_id,content)
                     else:
-                        repository.update_short_term_memory(
-                            row,
-                            content,
-                        )
+                        repository.update_short_term_memory(row,content)
 
-                # Save LTM if a memory result is available.
                 if new_ltm is not None:
                     repository = LongTermMemoryRepository(db)
-                    row = repository.get_memory_by_conversation_id(
-                        conversation_id
-                    )
+                    row = repository.get_memory_by_conversation_id(conversation_id)
                     content = new_ltm.model_dump(mode="json")
-
                     if row is None:
-                        repository.create_long_term_memory(
-                            conversation_id,
-                            content,
-                        )
+                        repository.create_long_term_memory(conversation_id,content)
                     else:
-                        repository.update_long_term_memory(
-                            row,
-                            content,
-                        )
-
-                # Advance checkpoints together, even when a range
-                # contains no messages requiring an LLM call.
-                conversation.last_stm_seq = max(
-                    conversation.last_stm_seq,
-                    target_seq,
-                )
-                conversation.last_ltm_seq = max(
-                    conversation.last_ltm_seq,
-                    target_seq,
-                )
-
-                # Re-read the current job target under the row lock.
-                # If newer work arrived, mark_completed requeues it.
-                completed = MemoryJobRepository(db).mark_completed(
-                    job_id,
-                    target_seq,
-                )
-
+                        repository.update_long_term_memory(row,content)
+                conversation.last_stm_seq = max(conversation.last_stm_seq,target_seq)
+                conversation.last_ltm_seq = max(conversation.last_ltm_seq,target_seq)
+                completed = MemoryJobRepository(db).mark_completed(job_id,target_seq)
                 if not completed:
-                    logger.info(
-                        "Memory job %s has more messages to process",
-                        job_id,
-                    )
-
+                    logger.info("Memory job %s has more messages to process",job_id)
         return True
 
     except Exception as exc:
-        logger.exception(
-            "Memory worker failed for job %s",
-            job_id,
-        )
+        logger.exception("Memory worker failed for job %s",job_id)
 
-        # A failed worker must not overwrite a newer worker's state.
         with SessionLocal() as db:
             with db.begin():
-                job = db.scalar(
-                    select(MemoryJob)
-                    .where(MemoryJob.job_id == job_id)
-                    .with_for_update()
-                )
-
-                if (
-                    job is not None
-                    and job.status == "processing"
-                    and job.locked_at == claimed_locked_at
-                ):
-                    MemoryJobRepository(db).mark_failed(
-                        job_id,
-                        exc,
-                    )
+                job = db.scalar(select(MemoryJob).where(MemoryJob.job_id == job_id).with_for_update())
+                if (job is not None and job.status == "processing" and job.locked_at == claimed_locked_at):
+                    MemoryJobRepository(db).mark_failed(job_id,exc)
                 else:
-                    logger.warning(
-                        "Skipping failure update for job %s: "
-                        "this worker no longer owns the lease",
-                        job_id,
-                    )
+                    logger.warning("Skipping failure update for job %s: ""this worker no longer owns the lease",job_id)
 
         return True
-
 
 if __name__ == "__main__":
     logging.basicConfig(level=logging.INFO)
