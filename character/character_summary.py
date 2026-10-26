@@ -1,5 +1,5 @@
 from langchain_core.messages import SystemMessage,HumanMessage
-from pydantic import BaseModel,Field
+from pydantic import BaseModel,Field,ConfigDict
 from typing import TypedDict,Literal
 from langchain_openai import ChatOpenAI
 from dotenv import load_dotenv
@@ -21,6 +21,7 @@ class CharacterSummary(BaseModel):
     relationships: list[str] = Field(default_factory=list,description="Permanent relationships with other characters.")
     role: list[str] = Field(default_factory=list,description="The character's role in the story or universe.")
 class StoredCharacterSummary(CharacterSummary):
+    model_config=ConfigDict(extra="forbid")
     schema_version:Literal[1]=1
 class Characters(BaseModel):
     characters:list[CharacterSummary] = Field(description="List of all characters extracted from the user's description.")

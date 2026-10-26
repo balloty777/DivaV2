@@ -7,10 +7,34 @@ from sqlalchemy import select
 from database.db import SessionLocal, engine
 from models.memory_job import MemoryJob
 from models.message import Message
+from schemas.conversation_character_summary import ConversationCharacterState
+
+
+class FakeCharacterStateModel:
+    """Deterministic structured-output fake for private character state."""
+
+    def __init__(self, proposed_state=None):
+        self.proposed_state = proposed_state or ConversationCharacterState(
+            mood="calm",
+            trust=0.0,
+            familiarity=0.0,
+            relationship_stage="new",
+        )
+
+    def with_structured_output(self, schema):
+        assert schema is ConversationCharacterState
+        return self
+
+    def invoke(self, prompt, *args, **kwargs):
+        assert engine.pool.checkedout() == 0, (
+            "A database connection was checked out during the "
+            "character-state LLM invocation."
+        )
+        return self.proposed_state
 
 
 def test_chat(client, monkeypatch):
-    # Replace the real OpenRouter model with a deterministic fake.
+    # Replace the real chat model with a deterministic fake.
     fake_model = FakeListChatModel(
         responses=["This is a test response."]
     )
@@ -22,9 +46,21 @@ def test_chat(client, monkeypatch):
             )
             return fake_model.invoke(prompt, *args, **kwargs)
 
+    # Patch the chat model and the state-update model independently.
     monkeypatch.setattr(
         "graph.nodes.chat.get_model",
         lambda: ConnectionCheckingModel(),
+    )
+    monkeypatch.setattr(
+        "graph.nodes.update_character_state.get_model",
+        lambda: FakeCharacterStateModel(
+            ConversationCharacterState(
+                mood="happy",
+                trust=0.1,
+                familiarity=0.1,
+                relationship_stage="acquaintance",
+            )
+        ),
     )
 
     # Create the user.
@@ -131,10 +167,28 @@ def test_chat(client, monkeypatch):
     assert len(jobs) == 1
     assert jobs[0].status == "pending"
     assert jobs[0].through_seq == messages_by_seq[1]["seq"]
+        # Verify the private character state was persisted to PostgreSQL.
+    from repositories.conversation_character_summary_repository import (
+        ConversationCharacterSummaryRepository,
+    )
 
+    with SessionLocal() as db:
+        character_state = (
+            ConversationCharacterSummaryRepository(db)
+            .get_by_conversation_id(conversation_id)
+        )
+
+        assert character_state is not None
+        assert character_state.content == {
+            "mood": "happy",
+            "trust": 0.1,
+            "familiarity": 0.1,
+            "relationship_stage": "acquaintance",
+        }
 
 def test_assistant_message_rolls_back_when_memory_job_creation_fails(
-    client, monkeypatch
+    client,
+    monkeypatch,
 ):
     fake_model = FakeListChatModel(
         responses=["This response will not be persisted."]
@@ -143,6 +197,10 @@ def test_assistant_message_rolls_back_when_memory_job_creation_fails(
     monkeypatch.setattr(
         "graph.nodes.chat.get_model",
         lambda: fake_model,
+    )
+    monkeypatch.setattr(
+        "graph.nodes.update_character_state.get_model",
+        lambda: FakeCharacterStateModel(),
     )
 
     # Create the user.
@@ -241,6 +299,13 @@ def test_user_message_persists_when_llm_fails(client, monkeypatch):
     monkeypatch.setattr(
         "graph.nodes.chat.get_model",
         lambda: FailingModel(),
+    )
+
+    # The chat model fails before the state-update node is reached.
+    # Patch it anyway to ensure this test never invokes a real provider.
+    monkeypatch.setattr(
+        "graph.nodes.update_character_state.get_model",
+        lambda: FakeCharacterStateModel(),
     )
 
     # Create the user.

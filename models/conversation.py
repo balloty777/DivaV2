@@ -3,6 +3,7 @@ from uuid import UUID,uuid4
 from sqlalchemy import DateTime,ForeignKey,func,String,BigInteger
 from sqlalchemy.orm import Mapped,mapped_column,relationship
 from database.db import Base
+from sqlalchemy.dialects.postgresql import JSONB
 
 class Conversation(Base):
     __tablename__="conversations"
@@ -24,6 +25,10 @@ class Conversation(Base):
         nullable=False,
         default=1,
         server_default="1"
+    )
+    character_summary_snapshot:Mapped[dict|None]=mapped_column(
+        JSONB,
+        nullable=True
     )
     title:Mapped[str|None]=mapped_column(
         String(200),

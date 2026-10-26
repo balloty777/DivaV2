@@ -7,13 +7,12 @@ from models.user import User
 from schemas.character_summary import CharacterSummaryCreate
 from services.character_summary_service import CharacterSummaryService
 
-
 router = APIRouter(prefix="/characters/{character_id}/character-summary",tags=["Character Summary"])
 
 @router.post("/")
 def create_character_summary(character_id: UUID,data: CharacterSummaryCreate,current_user: User = Depends(get_current_user),db: Session = Depends(get_db)):
     service = CharacterSummaryService(db)
-    return service.create_character_summary(user_id=current_user.user_id,character_id=character_id,content=data.content)
+    return service.create_character_summary(user_id=current_user.user_id,character_id=character_id,content=data.content.model_dump(mode="json"))
 
 @router.get("/")
 def get_character_summary(character_id: UUID,current_user: User = Depends(get_current_user),db: Session = Depends(get_db)):
@@ -23,7 +22,7 @@ def get_character_summary(character_id: UUID,current_user: User = Depends(get_cu
 @router.put("/")
 def update_character_summary(character_id: UUID,data: CharacterSummaryCreate,current_user: User = Depends(get_current_user),db: Session = Depends(get_db)):
     service = CharacterSummaryService(db)
-    return service.update_character_summary(user_id=current_user.user_id,character_id=character_id,content=data.content)
+    return service.update_character_summary(user_id=current_user.user_id,character_id=character_id,content=data.content.model_dump(mode="json"))
 
 @router.delete("/")
 def delete_character_summary(character_id: UUID,current_user: User = Depends(get_current_user),db: Session = Depends(get_db)):

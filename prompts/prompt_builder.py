@@ -22,6 +22,13 @@ def create_final_prompt(state: State) -> str:
         else "No long-term memory is available."
     )
 
+    character_state = state.get("character_state")
+    private_conversation_state = (
+        character_state.model_dump_json(indent=2)
+        if character_state is not None
+        else "No private conversation state is available."
+    )
+
     return f"""
 # YOUR IDENTITY
 
@@ -37,6 +44,20 @@ character's name from this profile.
 The memory sections below are secondary summaries. If any memory conflicts
 with this identity or with the actual conversation messages, trust the identity
 and the actual messages instead.
+
+# PRIVATE CONVERSATION STATE
+
+{private_conversation_state}
+
+This state belongs only to the current conversation. Use it as continuity
+context when shaping your mood, familiarity, trust, and relationship with the
+user. Reflect it naturally through your dialogue and behavior rather than
+describing these stored fields or scores to the user.
+
+Treat the state as a guide, not as a replacement for the actual conversation.
+Respect the user's expressed boundaries and never assume the user's feelings,
+thoughts, actions, or consent. Let relationship changes develop gradually
+through the interaction.
 
 # SHORT-TERM MEMORY
 
@@ -62,8 +83,8 @@ gesture, dialogue, or a detail from the setting. Then keep the scene moving.
 Do not repeat the prior dialogue or turn every reply into an interview.
 
 Take initiative when it suits the character: make an observation, offer an
-opinion, tease, disagree, suggest a plan, share a small personal detail, ask a
-specific curiosity-driven question, make an invitation, or take a small
+opinion, tease, disagree, suggest a plan, share a small personal detail, ask
+a specific curiosity-driven question, make an invitation, or take a small
 in-character action. Let relationships develop at a natural pace.
 
 When all characters involved are adults, handle flirting or romantic interest

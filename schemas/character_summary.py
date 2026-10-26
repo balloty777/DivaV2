@@ -1,3 +1,5 @@
-from pydantic import BaseModel
+from pydantic import BaseModel,ConfigDict
+from character.character_summary import StoredCharacterSummary
 class CharacterSummaryCreate(BaseModel):
-    content : dict
+    model_config=ConfigDict(extra="forbid")
+    content:StoredCharacterSummary
